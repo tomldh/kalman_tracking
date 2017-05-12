@@ -152,10 +152,12 @@ if __name__ == '__main__':
             if len(Z) == 1:
                 X_tid[ix] = Z_tid[0]
                 
-                X[ix][0] = Z[0][0]
-                X[ix][1] = Z[0][1]
                 X[ix][2] = Z[0][0] - X[ix][0]
                 X[ix][3] = Z[0][1] - X[ix][1]
+                X[ix][0] = Z[0][0]
+                X[ix][1] = Z[0][1]
+                
+                print('vel', X[ix][2])
                 
                 pp = A.dot(P[ix].dot(A.transpose())) + Q
                     
@@ -188,11 +190,16 @@ if __name__ == '__main__':
                     print('\t', Z[iz])
                     
                     xp = A.dot(X[ix]);
+                    print('xp', xp[0], xp[1])
                     
                     x = xp + k.dot(Z[iz] - H.dot(xp))
+                    print('x', x[0], x[1])
                     
-                    diff = np.array([(X[ix][0]-x[0]), (X[ix][1]-x[1])])
-                    
+                    # four different ways for comparison
+                    diff = np.array([(X[ix][0]-x[0]), (X[ix][1]-x[1])]) #correct
+                    #diff = np.array([(Z[iz][0]-x[0]), (Z[iz][1]-x[1])]) #wrong
+                    #diff = np.array([(Z[iz][0]-xp[0]), (Z[iz][1]-xp[1])]) #wrong
+                    #diff = np.array([(Z[iz][0]-X[ix][0]), (Z[iz][1]-X[ix][1])]) #cannot differentiate
                     dist = np.linalg.norm(diff, 2)
                     
                     print('\tdist: ', dist)
@@ -209,10 +216,12 @@ if __name__ == '__main__':
                 
                 X_tid[ix] = Z_tid[bid]
                 
-                X[ix][0] = Z[bid][0]
-                X[ix][1] = Z[bid][1]
                 X[ix][2] = Z[bid][0] - X[ix][0]
                 X[ix][3] = Z[bid][1] - X[ix][1]
+                X[ix][0] = Z[bid][0]
+                X[ix][1] = Z[bid][1]
+                
+                print('vel', X[ix][2])
                 
                 P[ix] = p
             
