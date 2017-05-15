@@ -75,7 +75,10 @@ def retrieveObs(tid, data, m_obs, m_tid):
 
 def drawFrame(m_X, fIdx):
     
-    cstr = ['r', 'g', 'b'] # FIXME: change this for more tracks!
+    # FIXME: change this for more tracks!
+    cstr = ['#000000', '#800000', '#FF0000', '#FFC9DE', '#AA6E28', '#FF9900', '#FFD8B1', '#808000',
+            '#FFEA00', '#FFFAC8', '#BEFF00', '#00BE00', '#AAFFC3', '#008080', '#64FFFF', '#000080', 
+            '#4385FF', '#820096', '#E6BEFF', '#FF00FF', '#808080', '#002300', '#563342', '#F24F2F']
     
     fname = 'track' + str(fIdx) + '.png'
     
