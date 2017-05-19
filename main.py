@@ -25,8 +25,10 @@ def loadDataFromJsonFile():
     }
     '''
     
+    fpath = input("Please provide json file path:")
+    
     try:
-        with open('twoArcs_Frame__COM-json.json', 'r') as fp:
+        with open(fpath, 'r') as fp:
             data = json.load(fp)
     except:
         print('Error opening file')
@@ -159,8 +161,6 @@ if __name__ == '__main__':
                 X[ix][3] = Z[0][1] - X[ix][1]
                 X[ix][0] = Z[0][0]
                 X[ix][1] = Z[0][1]
-                
-                print('vel', X[ix][2])
                 
                 pp = A.dot(P[ix].dot(A.transpose())) + Q
                     
