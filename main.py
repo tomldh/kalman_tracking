@@ -199,10 +199,10 @@ if __name__ == '__main__':
                     print('x', x[0], x[1])
                     
                     # four different ways for comparison
-                    diff = np.array([(X[ix][0]-x[0]), (X[ix][1]-x[1])]) #correct
-                    #diff = np.array([(Z[iz][0]-x[0]), (Z[iz][1]-x[1])]) #wrong
-                    #diff = np.array([(Z[iz][0]-xp[0]), (Z[iz][1]-xp[1])]) #wrong
-                    #diff = np.array([(Z[iz][0]-X[ix][0]), (Z[iz][1]-X[ix][1])]) #cannot differentiate
+                    diff = np.array([(X[ix][0]-x[0]), (X[ix][1]-x[1])]) #case 1: comparable to case 4, better than 4 due to influence of xp on z
+                    #diff = np.array([(Z[iz][0]-x[0]), (Z[iz][1]-x[1])]) #case 2
+                    #diff = np.array([(Z[iz][0]-xp[0]), (Z[iz][1]-xp[1])]) #case 3: same as case 2, as case 2 & 3 depends on the distance to respective z
+                    #diff = np.array([(Z[iz][0]-X[ix][0]), (Z[iz][1]-X[ix][1])]) #case 4: no good, cannot different equidistant candidates
                     dist = np.linalg.norm(diff, 2)
                     
                     print('\tdist: ', dist)
