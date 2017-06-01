@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 import sys
+from collections import deque
 
 def loadDataFromJsonFile():
     
@@ -25,16 +26,29 @@ def loadDataFromJsonFile():
     }
     '''
     
-    fpath = input("Please provide json file path:")
+    index = int(input("Please provide json file path index:\n \
+                    1 --> twoArcs_Frame__COM-json.json\n \
+                    2 --> twoArcs_Frame__COM-json2.json\n \
+                    3 --> sporos_m3.json.json\n"))
     
+    if index == 1:
+        fpath = 'data/twoArcs_Frame__COM-json.json'
+    
+    elif index == 2:
+        fpath = 'data/twoArcs_Frame__COM-json2.json'
+    
+    elif index == 3:
+        fpath = 'data/sporos_m3.json.json'
+        
     try:
         with open(fpath, 'r') as fp:
             data = json.load(fp)
     except:
-        print('Error opening file')
+        print('Error opening file:', fpath)
         sys.exit()
     
     return data
+
 
 def initStates(m_X, m_tid, m_P, data):
     
@@ -51,8 +65,19 @@ def initStates(m_X, m_tid, m_P, data):
             m_X.append(np.array([[cx],
                                  [cy],
                                  [0.],
+                                 [0.],
+                                 [0.],
                                  [0.]]))
-            m_P.append(np.identity(4, dtype='float64'))
+            m_P.append(np.identity(6, dtype='float64'))
+
+def initObs(m_Z, m_Ztid, m_X, m_Xtid):
+    
+    for i in range(len(m_X)):
+        m_Z.append(deque())
+        m_Ztid.append(deque())
+        m_Z[i].append(np.copy(m_X[i]))
+        m_Ztid[i].append(np.copy(m_Xtid[i]))
+    
             
 def retrieveObs(tid, data, m_obs, m_tid):
     
@@ -68,7 +93,11 @@ def retrieveObs(tid, data, m_obs, m_tid):
         
         m_tid.append(fc[i])
         m_obs.append(np.array([[cx],
-                               [cy]]))
+                               [cy],
+                               [0.],
+                               [0.],
+                               [0.],
+                               [0.]]))
         
         hasData = True
 
@@ -100,24 +129,30 @@ def drawFrame(m_X, fIdx):
 
 if __name__ == '__main__':
     
-    X = [] #stores state 4x1 (x,y,vx,vy) of each id node
+    X = [] #stores state 4x1 (x,y,vx,vy,ax,ay) of each id node
     X_tid = [] # store time-id tuple corresp. to items in X
     P = []
     
     Z = []
     Z_tid = []
     
-    A = np.array([[1., 0., 1., 0.],
-                  [0., 1., 0., 1.],
-                  [0., 0., 1., 0.],
-                  [0., 0., 0., 1.]]) #4x4 float64
+    A = np.array([[1., 0., 1., 0., 0., 0.],
+                  [0., 1., 0., 1., 0., 0.],
+                  [0., 0., 1., 0., 1., 0.],
+                  [0., 0., 0., 1., 0., 1.],
+                  [0., 0., 0., 0., 1., 0.],
+                  [0., 0., 0., 0., 0., 1.]]) #6x6 float64
     
-    H = np.array([[1., 0., 0., 0.], 
-                  [0., 1., 0., 0.]]) #2x4float64
+    H = np.array([[1., 0., 0., 0., 0., 0.], 
+                  [0., 1., 0., 0., 0., 0.],
+                  [0., 0., 1., 0., 0., 0.],
+                  [0., 0., 0., 1., 0., 0.],
+                  [0., 0., 0., 0., 1., 0.],
+                  [0., 0., 0., 0., 0., 1.]]) #2x6float64
     
     # assume gaussian noise model
-    Q = np.identity(4, dtype='float64') #4x4
-    R = np.identity(2, dtype='float64') #2x2
+    Q = np.identity(6, dtype='float64') #6x6
+    R = np.identity(6, dtype='float64') #6x6
     
     #P = np.identity(4, dtype='float64') #4x4
     #K = np.zeros((4,2), dtype='float64') #4x2
@@ -125,7 +160,18 @@ if __name__ == '__main__':
     jdata = loadDataFromJsonFile()
     
     #initialize state
+    #assumption: we only track the traxel which exists in the initial states
+    #            if there is new traxel in future timestamp, it will be ignored
     initStates(X, X_tid, P, jdata)
+    initObs(Z, Z_tid, X, X_tid)
+    '''
+    print(type(Z))
+    print(type(Z[0]))
+    print(len(Z))
+    print(len(Z[0]))
+    print(Z[1])
+    print(Z[0])
+    '''
     
     drawFrame(X, 0)
     
@@ -140,12 +186,12 @@ if __name__ == '__main__':
             
             print('X ', X_tid[ix], '\n', X[ix])
             
-            # empty old observations
-            del Z[:]
-            del Z_tid[:]
+            # for storing observations (future connection)
+            z = []
+            z_tid = []
             
             # observations in next timestamp
-            valid = retrieveObs(X_tid[ix], jdata, Z, Z_tid)
+            valid = retrieveObs(X_tid[ix], jdata, z, z_tid)
             
             if not valid:
                 #do something if there is no future connection
@@ -154,7 +200,7 @@ if __name__ == '__main__':
             hasTrack = True
             
             # unique track in next timestamp, update X with item 
-            if len(Z) == 1:
+            if len(Z) == 0:
                 X_tid[ix] = Z_tid[0]
                 
                 X[ix][2] = Z[0][0] - X[ix][0]
@@ -180,27 +226,39 @@ if __name__ == '__main__':
                 bid = -1
                 bdist = float('inf')
                 bP = np.copy(P[ix])
+                bX = np.copy(X[ix])
                 
                 pp = A.dot(P[ix].dot(A.transpose())) + Q
                     
                 k = pp.dot(H.transpose().dot(np.linalg.inv(H.dot(pp.dot(H.transpose())) + R)))
                 
-                p = (np.identity(4, dtype='float64')-k.dot(H)).dot(pp)
+                p = (np.identity(6, dtype='float64')-k.dot(H)).dot(pp)
                 
-                for iz in range(len(Z)):
-                    
-                    print('\tZ',iz, ' ', Z_tid[iz])
-                    print('\t', Z[iz])
+                numPrev = len(Z[ix]) #number of previous observations stored for a traxel
+                print('History observations: ', numPrev)
+                
+                for iz in range(len(z)):
+                     
+                    if numPrev > 1:
+                        z[iz][2] = z[iz][0] - Z[ix][numPrev-1][0]
+                        z[iz][3] = z[iz][1] - Z[ix][numPrev-1][1]
+                        
+                    if numPrev > 2:
+                        z[iz][4] = z[iz][2] - Z[ix][numPrev-1][2]
+                        z[iz][5] = z[iz][3] - Z[ix][numPrev-1][3] 
+                                   
+                    print('\tobs',iz, ' ', z_tid[iz])
+                    print('\t', z[iz])
                     
                     xp = A.dot(X[ix]);
                     print('xp', xp[0], xp[1])
                     
-                    x = xp + k.dot(Z[iz] - H.dot(xp))
+                    x = xp + k.dot(z[iz] - H.dot(xp))
                     print('x', x[0], x[1])
                     
                     # four different ways for comparison
-                    diff = np.array([(X[ix][0]-x[0]), (X[ix][1]-x[1])]) #case 1: comparable to case 4, better than 4 due to influence of xp on z
-                    #diff = np.array([(Z[iz][0]-x[0]), (Z[iz][1]-x[1])]) #case 2
+                    #diff = np.array([(X[ix][0]-x[0]), (X[ix][1]-x[1])]) #case 1: comparable to case 4, better than 4 due to influence of xp on z
+                    diff = np.array([(z[iz][0]-x[0]), (z[iz][1]-x[1])]) #case 2
                     #diff = np.array([(Z[iz][0]-xp[0]), (Z[iz][1]-xp[1])]) #case 3: same as case 2, as case 2 & 3 depends on the distance to respective z
                     #diff = np.array([(Z[iz][0]-X[ix][0]), (Z[iz][1]-X[ix][1])]) #case 4: no good, cannot different equidistant candidates
                     dist = np.linalg.norm(diff, 2)
@@ -210,23 +268,34 @@ if __name__ == '__main__':
                     if dist < bdist:
                         bdist = dist
                         bid = iz
+                        bX = np.copy(x)
                         
                     
                 if bid < 0:
                     print('Error: best observation id cannot be zero')
                 
-                print('\tbest id ', bid, ' ', Z_tid[bid])
+                if np.array_equal(bX, X[ix]):
+                    print('Error: no updated states from kalman filter')
+                    
+                print('\tbest id ', bid, ' ', z_tid[bid])
                 
-                X_tid[ix] = Z_tid[bid]
+                X_tid[ix] = z_tid[bid]
                 
-                X[ix][2] = Z[bid][0] - X[ix][0]
-                X[ix][3] = Z[bid][1] - X[ix][1]
-                X[ix][0] = Z[bid][0]
-                X[ix][1] = Z[bid][1]
-                
-                print('vel', X[ix][2])
+                X[ix][0] = bX[0]
+                X[ix][1] = bX[1]
+                X[ix][2] = bX[2]
+                X[ix][3] = bX[3]
+                X[ix][4] = bX[4]
+                X[ix][5] = bX[5]
                 
                 P[ix] = p
+                
+                if numPrev == 3:
+                    Z[ix].popleft()
+                    Z_tid[ix].popleft()
+                
+                Z[ix].append(z[bid])
+                Z_tid[ix].append(z_tid[bid])
             
                
         print('P\n', P[ix])
