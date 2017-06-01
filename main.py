@@ -104,7 +104,7 @@ def retrieveObs(tid, data, m_obs, m_tid):
     return hasData
             
 
-def drawFrame(m_X, fIdx):
+def drawFrame(m_X, m_Xtid, fIdx):
     
     # FIXME: change this for more tracks!
     cstr = ['#000000', '#800000', '#FF0000', '#FFC9DE', '#AA6E28', '#FF9900', '#FFD8B1', '#808000',
@@ -121,11 +121,16 @@ def drawFrame(m_X, fIdx):
     ax = fig.add_subplot(1,1,1)
     ax.imshow(frame)
     
+    annHist = []
+    
     for i in range(len(m_X)):
         ax.add_patch(Circle((m_X[i][0], m_X[i][1]), 10, color=cstr[i]))
+        annHist.append(ax.annotate('{0}'.format(m_Xtid[i]), xy=(m_X[i][0], m_X[i][1]), xytext=(m_X[i][0], m_X[i][1]+15)))
     
     fig.savefig(fname)
     
+    for i in range(len(annHist)):
+        annHist[i].remove()
 
 if __name__ == '__main__':
     
@@ -173,7 +178,7 @@ if __name__ == '__main__':
     print(Z[0])
     '''
     
-    drawFrame(X, 0)
+    drawFrame(X, X_tid, 0)
     
     hasTrack = True
     
@@ -236,14 +241,15 @@ if __name__ == '__main__':
                 
                 numPrev = len(Z[ix]) #number of previous observations stored for a traxel
                 print('History observations: ', numPrev)
+                print(Z[ix])
                 
                 for iz in range(len(z)):
                      
-                    if numPrev > 1:
+                    if numPrev > 0:
                         z[iz][2] = z[iz][0] - Z[ix][numPrev-1][0]
                         z[iz][3] = z[iz][1] - Z[ix][numPrev-1][1]
                         
-                    if numPrev > 2:
+                    if numPrev > 1:
                         z[iz][4] = z[iz][2] - Z[ix][numPrev-1][2]
                         z[iz][5] = z[iz][3] - Z[ix][numPrev-1][3] 
                                    
@@ -251,10 +257,10 @@ if __name__ == '__main__':
                     print('\t', z[iz])
                     
                     xp = A.dot(X[ix]);
-                    print('xp', xp[0], xp[1])
+                    print('xp', xp)
                     
                     x = xp + k.dot(z[iz] - H.dot(xp))
-                    print('x', x[0], x[1])
+                    print('x', x)
                     
                     # four different ways for comparison
                     #diff = np.array([(X[ix][0]-x[0]), (X[ix][1]-x[1])]) #case 1: comparable to case 4, better than 4 due to influence of xp on z
@@ -301,7 +307,7 @@ if __name__ == '__main__':
         print('P\n', P[ix])
         
         # draw a frame for each timestamp
-        drawFrame(X, jdata[X_tid[0]]['time'])
+        drawFrame(X, X_tid, jdata[X_tid[0]]['time'])
         
         input("Press any key for next timestamp...\n")
     
