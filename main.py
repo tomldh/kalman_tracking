@@ -50,7 +50,7 @@ def loadDataFromJsonFile():
     return data
 
 
-def initStates(m_X, m_tid, m_P, data):
+def initStates(m_X, m_tid, m_updated, m_P, data):
     
     for i in data:
         timestamp = data[i]['time']
@@ -68,6 +68,7 @@ def initStates(m_X, m_tid, m_P, data):
                                  [0.],
                                  [0.],
                                  [0.]]))
+            m_updated.append(False)
             m_P.append(np.identity(6, dtype='float64'))
 
 def initObs(m_Z, m_Ztid, m_X, m_Xtid):
@@ -105,7 +106,7 @@ def retrieveObs(tid, data, m_obs, m_tid):
             
 
 def drawFrame(m_X, m_Xtid, fIdx):
-    
+    print('frame: ', fIdx)
     # FIXME: change this for more tracks!
     cstr = ['#000000', '#800000', '#FF0000', '#FFC9DE', '#AA6E28', '#FF9900', '#FFD8B1', '#808000',
             '#FFEA00', '#FFFAC8', '#BEFF00', '#00BE00', '#AAFFC3', '#008080', '#64FFFF', '#000080', 
@@ -113,7 +114,7 @@ def drawFrame(m_X, m_Xtid, fIdx):
     
     fname = 'track' + str(fIdx) + '.png'
     
-    frame = np.ones((200,200,3), dtype='uint8')
+    frame = np.ones((300,300,3), dtype='uint8')
     frame *= 255
     
     fig = plt.figure(1)
@@ -136,10 +137,13 @@ if __name__ == '__main__':
     
     X = [] #stores state 4x1 (x,y,vx,vy,ax,ay) of each id node
     X_tid = [] # store time-id tuple corresp. to items in X
+    X_updated = [] # indicator to avoid multiple updates for same traxel
     P = []
     
     Z = []
     Z_tid = []
+    
+    gList = [] #stores tuples of (...) for all traxels and their all observations
     
     A = np.array([[1., 0., 1., 0., 0., 0.],
                   [0., 1., 0., 1., 0., 0.],
@@ -167,7 +171,7 @@ if __name__ == '__main__':
     #initialize state
     #assumption: we only track the traxel which exists in the initial states
     #            if there is new traxel in future timestamp, it will be ignored
-    initStates(X, X_tid, P, jdata)
+    initStates(X, X_tid, X_updated, P, jdata)
     initObs(Z, Z_tid, X, X_tid)
     '''
     print(type(Z))
@@ -178,13 +182,19 @@ if __name__ == '__main__':
     print(Z[0])
     '''
     
+    tcnt = 0
+    
     drawFrame(X, X_tid, 0)
+    
+    
     
     hasTrack = True
     
     while hasTrack:
-        
+        tcnt += 1
         hasTrack = False
+        
+        del gList[:]
         
         # loop through each traxel
         for ix in range(len(X)):
@@ -271,6 +281,20 @@ if __name__ == '__main__':
                     
                     print('\tdist: ', dist)
                     
+                    gList.append((ix, p, z_tid[iz], z[iz], x, dist))
+                    
+                    #print(type(gList[0]))
+                    #print(type(gList[0][2]))
+                    #print(type(gList[0][3]))
+                    #print(type(gList[0][4]))
+                    #print(type(gList[0][5]))
+                    
+                    #print(gList[0])
+                    #print(gList[0][2])
+                    #print(gList[0][3])
+                    #print(gList[0][4])
+                    #print(gList[0][5])
+                    
                     if dist < bdist:
                         bdist = dist
                         bid = iz
@@ -284,7 +308,7 @@ if __name__ == '__main__':
                     print('Error: no updated states from kalman filter')
                     
                 print('\tbest id ', bid, ' ', z_tid[bid])
-                
+                '''
                 X_tid[ix] = z_tid[bid]
                 
                 X[ix][0] = bX[0]
@@ -302,12 +326,68 @@ if __name__ == '__main__':
                 
                 Z[ix].append(z[bid])
                 Z_tid[ix].append(z_tid[bid])
+                '''
+        gList.sort(key=lambda x: x[5])
+        
+        for i in range(len(X_updated)):
+            X_updated[i] = False
             
+    
+        while len(gList):
+            print(len(gList))
+            
+            tpl = gList.pop(0)
+            
+            #if tpl[2] == '(5, 13)':
+            #   print('error dist ', tpl[5], X_tid[tpl[0]])
+                #sys.exit()
+            
+            if X_updated[tpl[0]]:
+                continue
+            
+            X_updated[tpl[0]] = True
+            
+            X_tid[tpl[0]] = tpl[2]
+            
+                
+            X[tpl[0]][0] = tpl[4][0]
+            X[tpl[0]][1] = tpl[4][1]
+            X[tpl[0]][2] = tpl[4][2]
+            X[tpl[0]][3] = tpl[4][3]
+            X[tpl[0]][4] = tpl[4][4]
+            X[tpl[0]][5] = tpl[4][5]
+            
+            P[tpl[0]] = tpl[1]
+            
+            if len(Z[tpl[0]]) == 3:
+                Z[tpl[0]].popleft()
+                Z_tid[tpl[0]].popleft()
+            
+            Z[tpl[0]].append(tpl[3])
+            Z_tid[tpl[0]].append(tpl[2])
+            
+            rList = []
+            
+            for elem in gList:
+                if elem[2] == tpl[2]:
+                    rList.append(elem)
+                #if tpl[2] == '(5, 13)':
+                #    print('error removal ', X_tid[tpl[0]])
+                #    sys.exit()
+            
+            for elem in rList:
+                gList.remove(elem)
+            
+            del rList[:]
+            
+            print(len(gList))
+         
                
-        print('P\n', P[ix])
+        #print('P\n', P[ix])
         
         # draw a frame for each timestamp
         drawFrame(X, X_tid, jdata[X_tid[0]]['time'])
+        #drawFrame(X, X_tid, tcnt)
         
         input("Press any key for next timestamp...\n")
     
