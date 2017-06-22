@@ -84,6 +84,7 @@ def retrieveObs(tid, data, m_obs, m_tid):
     
     hasData = False
     
+    # traxels with lost track will not have fcs
     if tid == '(-1, -1)':
         return hasData
     
@@ -107,37 +108,44 @@ def retrieveObs(tid, data, m_obs, m_tid):
 
     return hasData
 
-def retrieveNewTraxels(m_NX, m_NXtid, m_Xtid, timestamp, data):
+# get a list of remaining un-used observations at timestamp
+def retrieveRemainingObs(m_rz, m_rztid, m_Xtid, timestamp, data):
     
-    print(timestamp)
+    # FIXME: get the timestampe from m_Xtid instead?
     for i in data:
         if data[i]['time'] == timestamp:
-            m_NXtid.append(i)
+            m_rztid.append(i)
     
+    #in m_Xtid, there are 3 cases
+    #case 1: obs at timestamp
+    #case 2: not updated traxel, id at timestamp-1
+    #case 3: lost traxel, id = (-1,-1)
     for i in m_Xtid:
-        print(i)
         if not i == '(-1, -1)':
-            m_NXtid.remove(i)
+            if data[i]['time'] == timestamp:
+                m_rztid.remove(i)
         
-    for i in m_NXtid:
+    for i in m_rztid:
         com = data[i]['com']
         cx = float(com[1:com.index(',')])
         cy = float(com[com.index(',')+1:len(com)-1])
         
-        m_NX.append(np.array([[cx],
+        m_rz.append(np.array([[cx],
                               [cy]]))
               
 
-def drawFrame(m_X, m_Xtid, fIdx):
+def drawFrame(m_X, m_Xtid, fIdx, cstr):
     print('frame: ', fIdx)
     # FIXME: change this for more tracks!
+    '''
     cstr = ['#000000', '#800000', '#FF0000', '#FFC9DE', '#AA6E28', '#FF9900', '#FFD8B1', '#808000',
             '#FFEA00', '#FFFAC8', '#BEFF00', '#00BE00', '#AAFFC3', '#008080', '#64FFFF', '#000080', 
             '#4385FF', '#820096', '#E6BEFF', '#FF00FF', '#808080', '#002300', '#563342', '#F24F2F']
+    '''
     
     fname = 'track' + str(fIdx) + '.png'
     
-    frame = np.ones((400,400,3), dtype='uint8')
+    frame = np.ones((300,300,3), dtype='uint8')
     frame *= 255
     
     fig = plt.figure(1)
@@ -168,8 +176,13 @@ if __name__ == '__main__':
     
     gList = [] #stores tuples of (...) for all traxels and their all observations
     
-    NX = [] #stores list of NEW traxels not in the X_tid list AT CURRENT TIMESTAMP
-    NX_tid = []
+    rz = [] #stores list of NEW traxels not in the X_tid list AT CURRENT TIMESTAMP
+    rz_tid = []
+    
+    color_traxel = []
+    
+    for i in range(100):
+        color_traxel.append(np.random.rand(3,1))
     
     A = np.array([[1., 0., 1., 0., 0., 0.],
                   [0., 1., 0., 1., 0., 0.],
@@ -210,7 +223,7 @@ if __name__ == '__main__':
     
     tcnt = 0
     
-    drawFrame(X, X_tid, 0)
+    drawFrame(X, X_tid, 0, color_traxel)
     
     
     
@@ -218,37 +231,12 @@ if __name__ == '__main__':
     
     while hasTrack:
         
+        tcnt += 1
+        
         hasTrack = False
         
         del gList[:]
-        del NX[:]
-        del NX_tid[:]
-        
-        # out-of-X traxels
-        retrieveNewTraxels(NX, NX_tid, X_tid, tcnt, jdata)
-        
-        #FIXME
-        for ix in range(len(X_tid)):
-            if X_tid[ix] == '(-1, -1)':
-                removeId = -1
-                for inx in range(len(NX)):
-                    mdiff = np.array([(X[ix][0]-NX[inx][0]), (X[ix][1]-NX[inx][1])])
-                    mdist = np.linalg.norm(mdiff, 2)
-                    if (mdist < 20):
-                        X_tid[ix] = NX_tid[inx]
-                        X[ix][0] = NX[inx][0]
-                        X[ix][1] = NX[inx][1]
-                        removeId = inx
-                if removeId > -1:
-                    NX.pop(removeId)
-                    NX_tid(removeId)
-                
-                        
-                    
-                     
-        
-        
-        
+
         # loop through each traxel
         for ix in range(len(X)):
             
@@ -267,6 +255,7 @@ if __name__ == '__main__':
             
             #hasTrack = True
             
+            # if-case is to be deleted, no further use
             # unique track in next timestamp, update X with item 
             if len(Z) == 0:
                 X_tid[ix] = Z_tid[0]
@@ -305,6 +294,7 @@ if __name__ == '__main__':
                 xp = A.dot(X[ix]);
                 print('xp', xp)
                 
+                # update motion prediction regardless of having valid tracks
                 X[ix][0] = xp[0]
                 X[ix][1] = xp[1]
                 X[ix][2] = xp[2]
@@ -312,6 +302,7 @@ if __name__ == '__main__':
                 X[ix][4] = xp[4]
                 X[ix][5] = xp[5]
                 
+                # update P regardless of having valid tracks
                 P[ix] = p
                 
                 if not valid:
@@ -319,22 +310,6 @@ if __name__ == '__main__':
                 
                 hasTrack = True
                 
-                '''
-                # no fc from previous frame, but continue to do motion prediction
-                if not valid:
-                    X[ix][0] = xp[0]
-                    X[ix][1] = xp[1]
-                    X[ix][2] = xp[2]
-                    X[ix][3] = xp[3]
-                    X[ix][4] = xp[4]
-                    X[ix][5] = xp[5]
-                    
-                    P[ix] = p
-                    
-                    continue;
-                
-                hasTrack = True
-                '''
                 numPrev = len(Z[ix]) #number of previous observations stored for a traxel
                 print('History observations: ', numPrev)
                 print(Z[ix])
@@ -365,18 +340,6 @@ if __name__ == '__main__':
                     print('\tdist: ', dist)
                     
                     gList.append((ix, p, z_tid[iz], z[iz], x, dist))
-                    
-                    #print(type(gList[0]))
-                    #print(type(gList[0][2]))
-                    #print(type(gList[0][3]))
-                    #print(type(gList[0][4]))
-                    #print(type(gList[0][5]))
-                    
-                    #print(gList[0])
-                    #print(gList[0][2])
-                    #print(gList[0][3])
-                    #print(gList[0][4])
-                    #print(gList[0][5])
                     
                     if dist < bdist:
                         bdist = dist
@@ -410,22 +373,24 @@ if __name__ == '__main__':
                 Z[ix].append(z[bid])
                 Z_tid[ix].append(z_tid[bid])
                 '''
-        gList.sort(key=lambda x: x[5])
+        
+        # dynamic fc selection
+        # fc may be removed if already selected by other traxel
+        
+        gList.sort(key=lambda x: x[5]) # sort according to distance with fcs
         
         while len(gList):
-            print(len(gList))
             
+            # deal with the case of the smallest distance first
             tpl = gList.pop(0)
             
-            #if tpl[2] == '(5, 13)':
-            #   print('error dist ', tpl[5], X_tid[tpl[0]])
-                #sys.exit()
-            
+            # if updated before, should not consider again
             if X_updated[tpl[0]]:
                 continue
             
             X_updated[tpl[0]] = True
             
+            # update corresponding states, history obs
             X_tid[tpl[0]] = tpl[2]
             
                 
@@ -445,22 +410,51 @@ if __name__ == '__main__':
             Z[tpl[0]].append(tpl[3])
             Z_tid[tpl[0]].append(tpl[2])
             
+            # remove all occurrences of this fc
             rList = [] #list of to-be-removed items
             
             for elem in gList:
                 if elem[2] == tpl[2]:
                     rList.append(elem)
-                #if tpl[2] == '(5, 13)':
-                #    print('error removal ', X_tid[tpl[0]])
-                #    sys.exit()
             
             for elem in rList:
                 gList.remove(elem)
             
             del rList[:]
             
-            print(len(gList))
+        # The remaining un-used observations at current timestamp may include:
+        # 1) re-appearance of traxel with lost tracks
+        # 2) appearance of new traxel
+        # 3) dividing etc.
         
+        del rz[:]
+        del rz_tid[:]
+        
+        # retrieve un-used observations
+        retrieveRemainingObs(rz, rz_tid, X_tid, tcnt, jdata)
+        
+        # Deal with case of re-appearance
+        #FIXME: still consideration at all after n frames?
+        for ix in range(len(X_tid)):
+            if X_tid[ix] == '(-1, -1)':
+                removeId = -1
+                mbdist = float('inf')
+                mbid = -1
+                for inx in range(len(rz)):
+                    mdiff = np.array([(X[ix][0]-rz[inx][0]), (X[ix][1]-rz[inx][1])])
+                    mdist = np.linalg.norm(mdiff, 2)
+                    if mdist <50 and mdist < mbdist:
+                        mbid = inx
+                        mbdist = mdist
+                
+                if mbid > -1:
+                    X_tid[ix] = rz_tid[mbid]
+                    X[ix][0] = rz[mbid][0]
+                    X[ix][1] = rz[mbid][1]
+                    #FIXME: update history obs?
+                    X_updated[ix] = True
+                    rz.pop(mbid)
+                    rz_tid.pop(mbid)
         
          
         # if no update, no fc found
@@ -471,16 +465,31 @@ if __name__ == '__main__':
         # reset indicators
         for i in range(len(X_updated)):
             X_updated[i] = False
-            
-                   
-        #print('P\n', P[ix])
+        
+        # Deal with appearance of new traxel
+        for i in range(len(rz)):
+            print("new traxel: ", rz_tid[i])
+            X_tid.append(rz_tid[i])
+            X.append(np.array([[rz[i][0][0]],
+                               [rz[i][1][0]],
+                               [0.],
+                               [0.],
+                               [0.],
+                               [0.]]))
+            X_updated.append(False)
+            P.append(np.identity(6, dtype='float64'))
+            Z.append(deque())
+            Z_tid.append(deque())
+            Z[len(X)-1].append(np.copy(X[len(X)-1]))
+            Z_tid[len(X)-1].append(np.copy(X_tid[len(X)-1]))
+        
         
         # draw a frame for each timestamp
         #drawFrame(X, X_tid, jdata[X_tid[0]]['time'])
-        tcnt += 1
-        drawFrame(X, X_tid, tcnt)
         
-        if tcnt > 50:
+        drawFrame(X, X_tid, tcnt, color_traxel)
+        
+        if tcnt > 170:
             input("Press any key for next timestamp...\n")
     
     print('Tracking ends.')
