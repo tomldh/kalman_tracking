@@ -435,6 +435,7 @@ if __name__ == '__main__':
         
         # Deal with case of re-appearance
         #FIXME: still consideration at all after n frames?
+        #FIXME: use global list of tracks?
         for ix in range(len(X_tid)):
             if X_tid[ix] == '(-1, -1)':
                 removeId = -1
@@ -458,6 +459,7 @@ if __name__ == '__main__':
         
          
         # if no update, no fc found
+        # FIXME: clear the history observations as well?
         for i in range(len(X_updated)):
             if X_updated[i] == False:
                 X_tid[i] = '(-1, -1)'
