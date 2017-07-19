@@ -3,6 +3,11 @@ import json
 import sys
 import numpy as np
 from collections import deque
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
+import logging
+from datetime import datetime
+
 
 class Observation():
     
@@ -14,31 +19,35 @@ class Observation():
 
 class Ktraxel():
     
-    numOfStates = 6 # to be used to valid dimen later
+    lostId = '(-1, -1)'
+    numOfStates = 6 #number of states to update
+    numOfObs = 3 #number of history observation
     
     A = np.array([[1., 0., 1., 0., 0., 0.],
                   [0., 1., 0., 1., 0., 0.],
                   [0., 0., 1., 0., 1., 0.],
                   [0., 0., 0., 1., 0., 1.],
                   [0., 0., 0., 0., 1., 0.],
-                  [0., 0., 0., 0., 0., 1.]]) #6x6 float64
+                  [0., 0., 0., 0., 0., 1.]])
     
     H = np.array([[1., 0., 0., 0., 0., 0.], 
                   [0., 1., 0., 0., 0., 0.],
                   [0., 0., 1., 0., 0., 0.],
                   [0., 0., 0., 1., 0., 0.],
                   [0., 0., 0., 0., 1., 0.],
-                  [0., 0., 0., 0., 0., 1.]]) #2x6float64
+                  [0., 0., 0., 0., 0., 1.]])
     
     # assume gaussian noise model
-    Q = np.identity(numOfStates, dtype='float64') #6x6
-    R = np.identity(numOfStates, dtype='float64') #6x6
+    Q = np.identity(numOfStates, dtype='float64')
+    R = np.identity(numOfStates, dtype='float64')
     
-    def __init__(self, tid, x, p):
+    def __init__(self, tid, x, k, p):
         
         self.tid = tid
         
         self.x = x
+        
+        self.k = k
         
         self.p = p
         
@@ -60,25 +69,26 @@ def initTraxels(traxelList, data, startIndex):
             cx = float(com[1:com.index(',')])
             cy = float(com[com.index(',')+1:len(com)-1])
             
-            traxelList.append(Ktraxel(i, 
-                                           x=np.array([[cx],
+            traxelList.append(Ktraxel(i, x=np.array([[cx],
                                                        [cy],
                                                        [0.],
                                                        [0.],
                                                        [0.],
-                                                       [0.]]), 
-                                           p=np.identity(6, dtype='float64')))
+                                                       [0.]]),
+                                         k = np.identity(Ktraxel.numOfStates, dtype='float64'),
+                                         p = np.identity(Ktraxel.numOfStates, dtype='float64')))
 
 def retrieveObs(tid, data, obsList):
     
     hasObs = False
     
     # traxels with lost track will not have fcs
-    if tid == '(-1, -1)':
+    if tid == Ktraxel.lostId:
         return hasObs
     
     fc = data[tid]['future_connections'];
     
+    # add all future connection into list of observations
     for i in range(len(fc)):
         
         com = data[fc[i]]['com']
@@ -97,31 +107,30 @@ def retrieveObs(tid, data, obsList):
     return hasObs
 
 
-def computeCandidateTracks(tracksList, X, data):
+# update the parameters which do not depend on observation
+# i.e. regardless of whether there is any valid track
+def updateKalmanParamsWithoutObs(X):
     
     A = Ktraxel.A
     H = Ktraxel.H
     Q = Ktraxel.Q
     R = Ktraxel.R
+    
     idM = np.identity(Ktraxel.numOfStates, dtype='float64')
-    z = [] # for storing observations (future connection)
     
     for ix in range(len(X)):
-            
-        del z[:]
         
-        print('X ', X[ix].tid, '\n', X[ix].x)
+        #print('X ', X[ix].tid, '\n', X[ix].x)
+        logging.debug('X\n%s\n%s', X[ix].tid, X[ix].x)
         
         pp = A.dot((X[ix].p).dot(A.transpose())) + Q
-                        
-        k = pp.dot(H.transpose().dot(np.linalg.inv(H.dot(pp.dot(H.transpose())) + R)))
+                    
+        X[ix].k = pp.dot(H.transpose().dot(np.linalg.inv(H.dot(pp.dot(H.transpose())) + R)))
         
-        p = (idM-k.dot(H)).dot(pp)
+        X[ix].p = (idM-(X[ix].k).dot(H)).dot(pp)
         
         xp = A.dot(X[ix].x);
-        #print('xp', xp)
         
-        # update motion prediction regardless of having valid tracks
         X[ix].x[0] = xp[0]
         X[ix].x[1] = xp[1]
         X[ix].x[2] = xp[2]
@@ -129,76 +138,266 @@ def computeCandidateTracks(tracksList, X, data):
         X[ix].x[4] = xp[4]
         X[ix].x[5] = xp[5]
         
-        # update P regardless of having valid tracks
-        X[ix].p = p
+
+def computeCandidateTracks(tracksList, X, data):
     
-        # observations in next timestamp
-        hasObs = retrieveObs(X[ix].tid, data, z)
+    obsList = [] # for storing observations (future connection)
+    
+    for ix, traxel in enumerate(X):
+            
+        del obsList[:]
         
+        #print('X ', traxel.tid)
+        logging.debug('X %s', traxel.tid)
+        
+        # observations obtained from future connections
+        hasObs = retrieveObs(traxel.tid, data, obsList)
+        
+        # no track can be computed if there is no observation
         if not hasObs:
             continue
         
-        numPrev = len(X[ix].histZ) #number of previous observations stored for a traxel
-        print('History observations: ', numPrev)
-        print(X[ix].histZ)
+        numPrev = len(traxel.histZ) #number of previous observations stored for a traxel
+        #print('History observations: ', numPrev)
+        logging.debug('History observations: %s', numPrev)
         
-        for iz in range(len(z)):
-             
-            if numPrev > 0:
-                z[iz].z[2] = z[iz].z[0] - X[ix].histZ[numPrev-1].z[0]
-                z[iz].z[3] = z[iz].z[1] - X[ix].histZ[numPrev-1].z[1]
-                
-            if numPrev > 1:
-                z[iz].z[4] = z[iz].z[2] - X[ix].histZ[numPrev-1].z[2]
-                z[iz].z[5] = z[iz].z[3] - X[ix].histZ[numPrev-1].z[3] 
-                           
-            print('\tobs',iz, ' ', z[iz].tid)
-            print('\t', z[iz].z)
+        for ob in obsList:
             
-            x = X[ix].x + k.dot(z[iz].z - H.dot(X[ix].x))
-            print('x', x)
+            # velocity can be derived when there is at least 1 history observation 
+            if numPrev > 0:
+                ob.z[2] = ob.z[0] - traxel.histZ[numPrev-1].z[0]
+                ob.z[3] = ob.z[1] - traxel.histZ[numPrev-1].z[1]
+            # acceleration can be derived when there is at least 2 history observations
+            if numPrev > 1:
+                ob.z[4] = ob.z[2] - traxel.histZ[numPrev-1].z[2]
+                ob.z[5] = ob.z[3] - traxel.histZ[numPrev-1].z[3] 
+                           
+            #print('\tobs', ob.tid)
+            #print('\t', ob.z)
+            logging.debug('\tobs%s', ob.tid)
+            logging.debug('\t%s', ob.z)
+            
+            x = traxel.x + (traxel.k).dot(ob.z - (Ktraxel.H).dot(traxel.x))
             
             # four different ways for comparison
             #diff = np.array([(X[ix][0]-x[0]), (X[ix][1]-x[1])]) #case 1: comparable to case 4, better than 4 due to influence of xp on z
-            diff = np.array([(z[iz].z[0]-x[0]), (z[iz].z[1]-x[1])]) #case 2
+            diff = np.array([(ob.z[0]-x[0]), (ob.z[1]-x[1])]) #case 2
             #diff = np.array([(Z[iz][0]-xp[0]), (Z[iz][1]-xp[1])]) #case 3: same as case 2, as case 2 & 3 depends on the distance to respective z
             #diff = np.array([(Z[iz][0]-X[ix][0]), (Z[iz][1]-X[ix][1])]) #case 4: no good, cannot different equidistant candidates
+
             dist = np.linalg.norm(diff, 2)
             
-            print('\tdist: ', dist)
+            #print('\tdist: ', dist)
+            logging.debug('\tdist: %s', dist)
             
-            tracksList.append((ix, p, z[iz].tid, z[iz].z, x, dist))
+            # add candidate track to global list
+            tracksList.append((ix, x, ob, dist))
+    
 
+def assignTrackByDistance(tracksList, X):
     
+    # track[0] - traxel index in X
+    # track[1] - aposterior state estimate
+    # track[2] - corresponding observation object
+    # track[3] - distance
     
+    tracksList.sort(key=lambda x: x[3]) # sort according to distance
+    
+    while len(tracksList):
             
+        # deal with the case of the smallest distance first
+        track = tracksList.pop(0)
+        
+        # if updated before, should not consider again
+        if X[track[0]].updated:
+            continue
+        
+        ix = track[0]
+        
+        X[ix].updated = True
+        
+        # update corresponding traxel, history obs
+        X[ix].tid = track[2].tid
+        
+        #X[ix].x = track[1] # a bug if use this line to copy array
+        
+        X[ix].x[0] = track[1][0]
+        X[ix].x[1] = track[1][1]
+        X[ix].x[2] = track[1][2]
+        X[ix].x[3] = track[1][3]
+        X[ix].x[4] = track[1][4]
+        X[ix].x[5] = track[1][5]
+        
+        if len(X[ix].histZ) == Ktraxel.numOfObs:
+            X[ix].histZ.popleft()
+        
+        X[ix].histZ.append(track[2])
+        
+        # remove all occurrences of this observation
+        rList = [] #list of to-be-removed items
+        
+        for idx, elem in enumerate(tracksList):
+            if elem[2].tid == track[2].tid:
+                rList.append(idx)
+        
+        while len(rList):
+            i = rList.pop()
+            tracksList.pop(i)
+        
+            for idx in range(len(rList)):
+                if rList[idx] > i:
+                    rList[idx] -= 1
+
+        del rList[:]
+    
+    
+
+# get a list of remaining un-used observations at timestamp
+def retrieveRemainingObs(X, obsList, timestamp, data):
+    
+    tid = []
+    
+    # FIXME: get the timestampe from m_Xtid instead?
+    for i in data:
+        if data[i]['time'] == timestamp:
+            tid.append(i)
+    
+    #in m_Xtid, there are 3 cases
+    #case 1: obs at timestamp
+    #case 2: not updated traxel, id at timestamp-1
+    #case 3: lost traxel, id = (-1,-1)
+    for traxel in X:
+        if not traxel.tid == Ktraxel.lostId:
+            if data[traxel.tid]['time'] == timestamp:
+                tid.remove(traxel.tid)
+        
+    for i in tid:
+        com = data[i]['com']
+        cx = float(com[1:com.index(',')])
+        cy = float(com[com.index(',')+1:len(com)-1])
+        
+        obsList.append(Observation(i, z=np.array([[cx],
+                                                  [cy]])))
+
+def reassignLostTraxel(X, obsList):
+    # Deal with case of re-appearance
+    #FIXME: still consideration at all after n frames?
+    #FIXME: use global list of tracks?
+    
+    for traxel in X:
+        if traxel.tid == Ktraxel.lostId:
+            mbdist = float('inf')
+            mbid = -1
+            for idx, ob in enumerate(obsList):
+                mdiff = np.array([(traxel.x[0]-ob.z[0]), (traxel.x[1]-ob.z[1])])
+                mdist = np.linalg.norm(mdiff, 2)
+                if mdist <50 and mdist < mbdist:
+                    mbid = idx
+                    mbdist = mdist
+            
+            if mbid > -1:
+                traxel.tid = obsList[mbid].tid
+                traxel.x[0] = obsList[mbid].z[0]
+                traxel.x[1] = obsList[mbid].z[1]
+                #FIXME: update history obs?
+                traxel.updated = True
+                obsList.pop(mbid)
+
+def newTraxel(traxelList, obsList):
+    
+    # Deal with appearance of new traxel
+    for ob in obsList:
+        #print("new traxel: ", ob.tid)
+        logging.debug('new traxel: %s', ob.tid)
+        
+        traxelList.append(Ktraxel(ob.tid, x=np.array([ob.z[0],
+                                                       ob.z[1],
+                                                       [0.],
+                                                       [0.],
+                                                       [0.],
+                                                       [0.]]),
+                                  k = np.identity(Ktraxel.numOfStates, dtype='float64'),
+                                  p = np.identity(Ktraxel.numOfStates, dtype='float64')))
+
+
+def drawFrame(traxelList, timestamp, cstr):
+    print('frame: ', timestamp)
+    
+    fname = 'track' + str(timestamp) + '.png'
+    
+    frame = np.ones((300,300,3), dtype='uint8')
+    frame *= 255
+    
+    fig = plt.figure(1)
+    plt.axis('off')
+    ax = fig.add_subplot(1,1,1)
+    ax.imshow(frame)
+    
+    annHist = []
+   
+    for idx, traxel in enumerate(traxelList):
+        ax.add_patch(Circle((traxel.x[0], traxel.x[1]), 10, color=cstr[idx]))
+        annHist.append(ax.annotate('{0}'.format(traxel.tid), xy=(traxel.x[0], traxel.x[1]), xytext=(traxel.x[0], traxel.x[1]+15)))
+    
+    fig.savefig(fname)
+    
+    for i in range(len(annHist)):
+        annHist[i].remove()
+
 def track(data, startIndex, stopIndex):
     
-    X = [] # list of traxels
+    X = [] #list of traxels
     gList = [] #stores tuples of (...) for all traxels and their all observations
+    unusedObs = [] #list of un-used observation
+    color_traxel = [] #colors for drawing the object 
+    
+    for i in range(100):
+        color_traxel.append(np.random.rand(3,1))
 
-        
     
     initTraxels(X, data, startIndex)
+    
+    drawFrame(X, startIndex, color_traxel)
     
     fIndex = startIndex
     
     # perform tracking until stopping frame
     while fIndex < stopIndex:
         
+        fIndex += 1
+        
         del gList[:]
+        del unusedObs[:]
+        
+        updateKalmanParamsWithoutObs(X)
         
         computeCandidateTracks(gList, X, data)
+        #print('gList size1: ', len(gList))
+        assignTrackByDistance(gList, X)
         
-        input("Press any key for next timestamp...\n")
+        #print('gList size: ', len(gList))
+        
+        retrieveRemainingObs(X, unusedObs, fIndex, data)
+        
+        reassignLostTraxel(X, unusedObs)
+        
+        # if no update, no fc found
+        # FIXME: clear the history observations as well?
+        for traxel in X:
+            if traxel.updated == False:
+                traxel.tid = Ktraxel.lostId
+        
+        # reset indicators
+        for traxel in X:
+            traxel.updated = False
+        
+        newTraxel(X, unusedObs)
+        
+        drawFrame(X, fIndex, color_traxel)
         
         
-        
-        
-        
-    
-    
-    
+        if (fIndex > 10):
+            input("Press any key for next timestamp...\n")
 
 
 
@@ -237,11 +436,14 @@ def checkFrameIndex(data, fstart, fstop):
     return fstart, fstop
 
 
+
 if __name__ == '__main__':
+    
+    
     
     parser = argparse.ArgumentParser(description='Kalman tracking')
     
-    parser.add_argument('-f', '--file', default='data/twoArcs_Frame__COM-json2.json', type=str, dest='jFile',
+    parser.add_argument('-f', '--file', default='data/sporos_m3.json.json', type=str, dest='jFile',
                         help='Filename of the json data file')
     
     parser.add_argument('--start', default=0, type=int, dest='fstart',
@@ -250,7 +452,13 @@ if __name__ == '__main__':
     parser.add_argument('--stop', default=-1, type=int, dest='fstop',
                     help='Index of frame to stop tracking')
     
+    parser.add_argument('-l', '--log', default=True, type=bool, dest='enableLog',
+                        help='logging')
+    
     args = parser.parse_args()
+    
+    if args.enableLog:
+        logging.basicConfig(filename=datetime.now().strftime('%Y_%m_%d_%H_%M.log'),level=logging.DEBUG)
     
     jdata = loadDataFromJsonFile(args.jFile)
     
