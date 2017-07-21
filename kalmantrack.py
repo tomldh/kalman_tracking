@@ -322,6 +322,7 @@ def newTraxel(traxelList, obsList):
 
 def drawFrame(traxelList, timestamp, cstr):
     print('frame: ', timestamp)
+    logging.debug('frame: %s', timestamp)
     
     fname = 'track' + str(timestamp) + '.png'
     
@@ -351,6 +352,8 @@ def track(data, startIndex, stopIndex):
     unusedObs = [] #list of un-used observation
     color_traxel = [] #colors for drawing the object 
     
+    np.random.seed(10)
+    
     for i in range(100):
         color_traxel.append(np.random.rand(3,1))
 
@@ -372,10 +375,8 @@ def track(data, startIndex, stopIndex):
         updateKalmanParamsWithoutObs(X)
         
         computeCandidateTracks(gList, X, data)
-        #print('gList size1: ', len(gList))
+
         assignTrackByDistance(gList, X)
-        
-        #print('gList size: ', len(gList))
         
         retrieveRemainingObs(X, unusedObs, fIndex, data)
         
@@ -396,7 +397,7 @@ def track(data, startIndex, stopIndex):
         drawFrame(X, fIndex, color_traxel)
         
         
-        if (fIndex > 10):
+        if (fIndex > 10000):
             input("Press any key for next timestamp...\n")
 
 
@@ -408,6 +409,7 @@ def loadDataFromJsonFile(fpath):
             data = json.load(fp)
     except:
         print('Error opening file:', fpath)
+        logging.debug('Error opening file: %s', fpath)
         sys.exit()
     
     return data
@@ -430,6 +432,8 @@ def checkFrameIndex(data, fstart, fstop):
     if fstart > stop or fstop > stop or fstart < start or fstop < start:
         print('Error in start-stop frame index: start-', fstart, ', stop-', fstop)
         print('Perform tracking on all frames.')
+        logging.debug('Error in start-stop frame index: start-%s, stop-%s', fstart, fstop)
+        logging.debug('Perform tracking on all frames.')
         
         return start, stop
     
@@ -438,8 +442,6 @@ def checkFrameIndex(data, fstart, fstop):
 
 
 if __name__ == '__main__':
-    
-    
     
     parser = argparse.ArgumentParser(description='Kalman tracking')
     
