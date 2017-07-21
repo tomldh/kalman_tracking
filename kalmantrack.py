@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 import logging
 from datetime import datetime
+import copy
+from sympy.geometry import curve
 
 
 class Observation():
@@ -338,9 +340,47 @@ def drawFrame(traxelList, timestamp, cstr):
    
     for idx, traxel in enumerate(traxelList):
         ax.add_patch(Circle((traxel.x[0], traxel.x[1]), 10, color=cstr[idx]))
-        annHist.append(ax.annotate('{0}'.format(traxel.tid), xy=(traxel.x[0], traxel.x[1]), xytext=(traxel.x[0], traxel.x[1]+15)))
+        #annHist.append(ax.annotate('{0}'.format(traxel.tid), xy=(traxel.x[0], traxel.x[1]), xytext=(traxel.x[0], traxel.x[1]+15)))
     
     fig.savefig(fname)
+    
+    for i in range(len(annHist)):
+        annHist[i].remove()
+
+def drawFrameArrow(traxelListPrev, traxelListCurr, timestamp, cstr):
+    print('frame: ', timestamp)
+    logging.debug('frame: %s', timestamp)
+    
+    fname = 'track' + str(timestamp) + '.png'
+    
+    frame = np.ones((300,300,3), dtype='uint8')
+    frame *= 255
+    
+    fig = plt.figure(1)
+    plt.axis('off')
+    ax = fig.add_subplot(1,1,1)
+    ax.imshow(frame)
+    
+    annHist = []
+   
+    for idx, cur in enumerate(traxelListCurr):
+        
+        if (idx < len(traxelListPrev)):
+            prev = traxelListPrev[idx] #(traxelListPrev[idx].x[0], traxelListPrev[idx].x[1])
+            annHist.append(ax.add_patch(Circle((cur.x[0], cur.x[1]), 10, color=cstr[idx], alpha = 0.5)))
+            annHist.append(ax.add_patch(Circle((prev.x[0], prev.x[1]), 10, color=cstr[idx], alpha = 0.5)))
+            annHist.append(ax.arrow(float(prev.x[0]), float(prev.x[1]), float(cur.x[0]-prev.x[0]), float(cur.x[1]-prev.x[1]), head_width=5, head_length=5, fc='k', ec='k'))
+            
+            if cur.tid == Ktraxel.lostId:
+                annHist.append(ax.arrow(float(prev.x[0]), float(prev.x[1]), float(cur.x[0]-prev.x[0]), float(cur.x[1]-prev.x[1]), head_width=5, head_length=5, fc='r', ec='r'))
+            if prev.tid == Ktraxel.lostId:
+                annHist.append(ax.arrow(float(prev.x[0]), float(prev.x[1]), float(cur.x[0]-prev.x[0]), float(cur.x[1]-prev.x[1]), head_width=5, head_length=5, fc='r', ec='r'))
+            
+        else:
+            annHist.append(ax.add_patch(Circle((cur.x[0], cur.x[1]), 10, color=cstr[idx], alpha = 0.5)))
+        
+    
+    fig.savefig(fname, bbox_inches='tight', pad_inches=0, frameon=True)
     
     for i in range(len(annHist)):
         annHist[i].remove()
@@ -348,6 +388,7 @@ def drawFrame(traxelList, timestamp, cstr):
 def track(data, startIndex, stopIndex):
     
     X = [] #list of traxels
+    Xprev = [] #a copy of last frame
     gList = [] #stores tuples of (...) for all traxels and their all observations
     unusedObs = [] #list of un-used observation
     color_traxel = [] #colors for drawing the object 
@@ -360,12 +401,23 @@ def track(data, startIndex, stopIndex):
     
     initTraxels(X, data, startIndex)
     
-    drawFrame(X, startIndex, color_traxel)
+    Xprev = copy.deepcopy(X)
+    #for item in X:
+    #    Xprev.append((item.x[0], item.x[1]))
+    
+    #drawFrame(X, startIndex, color_traxel)
+    
+    drawFrameArrow(Xprev, X, startIndex, color_traxel)
     
     fIndex = startIndex
     
     # perform tracking until stopping frame
     while fIndex < stopIndex:
+        
+        del Xprev[:]
+        Xprev = copy.deepcopy(X)
+        #for item in X:
+        #    Xprev.append((float(item.x[0]), float(item.x[1])))
         
         fIndex += 1
         
@@ -394,7 +446,9 @@ def track(data, startIndex, stopIndex):
         
         newTraxel(X, unusedObs)
         
-        drawFrame(X, fIndex, color_traxel)
+        #drawFrame(X, fIndex, color_traxel)
+        
+        drawFrameArrow(Xprev, X, fIndex, color_traxel)
         
         
         if (fIndex > 10000):
