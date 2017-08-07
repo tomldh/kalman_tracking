@@ -11,6 +11,7 @@ import copy
 from sympy.geometry import curve
 
 
+
 class Observation():
     
     def __init__(self, tid, z):
@@ -193,7 +194,8 @@ def computeCandidateTracks(tracksList, X, data):
             logging.debug('\tdist: %s', dist)
             
             # add candidate track to global list
-            tracksList.append((ix, x, ob, dist))
+            if dist < 15:
+                tracksList.append((ix, x, ob, dist))
     
 
 def assignTrackByDistance(tracksList, X):
@@ -279,13 +281,35 @@ def retrieveRemainingObs(X, obsList, timestamp, data):
         cy = float(com[com.index(',')+1:len(com)-1])
         
         obsList.append(Observation(i, z=np.array([[cx],
-                                                  [cy]])))
+                                                  [cy],
+                                                  [0.],
+                                                  [0.],
+                                                  [0.],
+                                                  [0.]])))
 
 def reassignLostTraxel(X, obsList):
     # Deal with case of re-appearance
     #FIXME: still consideration at all after n frames?
     #FIXME: use global list of tracks?
     
+    llist = []
+    
+    for ix, traxel in enumerate(X):
+        if traxel.tid == Ktraxel.lostId:
+            for idx, ob in enumerate(obsList):
+                diff = np.array([(traxel.x[0]-ob.z[0]), (traxel.x[1]-ob.z[1])])
+                dist = np.linalg.norm(diff, 2)
+                if dist < 25:
+                    x = np.copy(traxel.x)
+                    x[0] = ob.z[0]
+                    x[1] = ob.z[1]
+                    llist.append((ix, x, ob, dist))
+    
+    assignTrackByDistance(llist, X)
+    
+    del llist[:]
+                
+    '''
     for traxel in X:
         if traxel.tid == Ktraxel.lostId:
             mbdist = float('inf')
@@ -304,6 +328,7 @@ def reassignLostTraxel(X, obsList):
                 #FIXME: update history obs?
                 traxel.updated = True
                 obsList.pop(mbid)
+    '''
 
 def newTraxel(traxelList, obsList):
     
@@ -422,7 +447,7 @@ def track(data, startIndex, stopIndex):
         fIndex += 1
         
         del gList[:]
-        del unusedObs[:]
+        
         
         updateKalmanParamsWithoutObs(X)
         
@@ -430,6 +455,7 @@ def track(data, startIndex, stopIndex):
 
         assignTrackByDistance(gList, X)
         
+        del unusedObs[:]
         retrieveRemainingObs(X, unusedObs, fIndex, data)
         
         reassignLostTraxel(X, unusedObs)
@@ -443,6 +469,9 @@ def track(data, startIndex, stopIndex):
         # reset indicators
         for traxel in X:
             traxel.updated = False
+        
+        del unusedObs[:]
+        retrieveRemainingObs(X, unusedObs, fIndex, data)
         
         newTraxel(X, unusedObs)
         
