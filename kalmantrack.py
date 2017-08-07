@@ -8,9 +8,9 @@ from matplotlib.patches import Circle
 import logging
 from datetime import datetime
 import copy
-from sympy.geometry import curve
+import h5py
 
-
+  
 
 class Observation():
     
@@ -410,7 +410,55 @@ def drawFrameArrow(traxelListPrev, traxelListCurr, timestamp, cstr):
     for i in range(len(annHist)):
         annHist[i].remove()
 
-def track(data, startIndex, stopIndex):
+
+def updateResults(resultList, traxelListPrev, traxelListCurr, data, timestamp):
+    
+    resultList.append(list())
+    
+    ridx = len(resultList)-1
+    
+    for idx, prev in enumerate(traxelListPrev):
+        
+        curr = traxelListCurr[idx]
+        
+        if prev.tid == Ktraxel.lostId or curr.tid == Ktraxel.lostId:
+            continue
+        
+        idPrev = data[prev.tid]['id']
+        idCurr = data[curr.tid]['id']
+        
+        #tPrev = data[prev.tid]['time']
+        #tCurr = data[curr.tid]['time']
+        
+        #print('timestamp={0}, {1}:{2}, {3}:{4}'.format(timestamp, tPrev, idPrev, tCurr, idCurr))
+        
+        resultList[ridx].append((idPrev, idCurr))
+    
+        
+def outputEventResults(resultList):
+    
+    for i, frame in enumerate(resultList):
+        
+        fip = h5py.File('H5template/{0:05d}.h5'.format(i), 'r')
+        fop = h5py.File('H5results/{0:05d}.h5'.format(i), 'w')
+        
+        fop.create_group('objects')
+        fip.copy('objects/meta', fop['objects'])
+        fip.copy('segmentation', fop)
+        
+        if i == 0:
+            fip.copy('tracking', fop)
+        else:
+            fop.create_dataset('tracking/Moves', (len(frame), 2), dtype='i', data=frame)
+         
+        #for j, tpl in enumerate(frame):
+        #   print('{0}: {1}->{2}'.format(i, tpl[0], tpl[1]))
+        
+        fip.close()
+        fop.close()
+         
+
+def track(data, startIndex, stopIndex, results):
     
     X = [] #list of traxels
     Xprev = [] #a copy of last frame
@@ -433,6 +481,7 @@ def track(data, startIndex, stopIndex):
     #drawFrame(X, startIndex, color_traxel)
     
     drawFrameArrow(Xprev, X, startIndex, color_traxel)
+    updateResults(results, Xprev, X, data, startIndex)
     
     fIndex = startIndex
     
@@ -478,12 +527,15 @@ def track(data, startIndex, stopIndex):
         #drawFrame(X, fIndex, color_traxel)
         
         drawFrameArrow(Xprev, X, fIndex, color_traxel)
+        updateResults(results, Xprev, X, data, fIndex)
         
         
         if (fIndex > 10000):
             input("Press any key for next timestamp...\n")
-
-
+    
+    # output tracking in H5 file for evaluation
+    outputEventResults(results)
+    
 
 def loadDataFromJsonFile(fpath):
     
@@ -550,7 +602,9 @@ if __name__ == '__main__':
     # check validity of fstart and fstop
     start, stop = checkFrameIndex(jdata, args.fstart, args.fstop)
     
-    track(jdata, start, stop)
+    trackingResult = []
+    
+    track(jdata, start, stop, trackingResult)
     
     
     pass
